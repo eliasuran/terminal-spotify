@@ -1,6 +1,6 @@
 use std::env;
 
-pub fn env_check(variable: &str) -> String {
+pub fn get_env(variable: &str) -> String {
     let env_var = match env::var(variable) {
         Ok(value) => value,
         Err(_) => {
