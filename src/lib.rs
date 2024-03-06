@@ -10,3 +10,19 @@ pub fn get_env(variable: &str) -> String {
     };
     return env_var.to_string();
 }
+
+///// STRUCTS /////
+// struct TrackObject {
+//  id: String,
+//name: String,
+//artists: Box<[String]>,
+//}
+
+#[derive(Debug)]
+pub struct CurrentlyPlaying {
+    pub is_playing: bool,
+    //r#type: String,
+    //pub name: String,
+    pub progress_ms: Option<chrono::TimeDelta>,
+    //item: TrackObject,
+}

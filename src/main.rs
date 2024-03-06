@@ -1,11 +1,6 @@
 use dotenv::dotenv;
 use rspotify::{prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
-use std::{thread, time::Duration};
-use terminal_spotify::get_env;
-
-struct CurrentlyPlaying {
-    name: String,
-}
+use terminal_spotify::{get_env, CurrentlyPlaying};
 
 #[tokio::main]
 async fn main() {
@@ -18,13 +13,24 @@ async fn main() {
     // returns a variable which all functions used to get data can be run on
     let spotify = authorize_user(&client_id, &client_secret).await;
 
-    let currently_playing = spotify.current_user_playing_item().await.unwrap();
-    println!("{:?}", currently_playing);
+    let currently_playing = spotify.current_user_playing_item().await.unwrap().unwrap();
 
-    loop {
-        println!("bruh bruh");
-        thread::sleep(Duration::new(2, 0))
+    if !currently_playing.is_playing {
+        println!("Not listening to anything");
+        return;
     }
+
+    let data = CurrentlyPlaying {
+        is_playing: currently_playing.is_playing,
+        progress_ms: currently_playing.progress,
+    };
+
+    println!("Currently playing: {:?}", data);
+
+    //loop {
+    //println!("bruh bruh");
+    //thread::sleep(Duration::new(2, 0))
+    //}
 }
 
 async fn authorize_user(client_id: &str, client_secret: &str) -> AuthCodeSpotify {
