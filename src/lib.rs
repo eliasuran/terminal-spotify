@@ -1,5 +1,8 @@
 use std::env;
 
+use chrono::{DateTime, Duration, Utc};
+use rspotify::model::PlayableItem;
+
 pub fn get_env(variable: &str) -> String {
     let env_var = match env::var(variable) {
         Ok(value) => value,
@@ -12,17 +15,19 @@ pub fn get_env(variable: &str) -> String {
 }
 
 ///// STRUCTS /////
-// struct TrackObject {
-//  id: String,
-//name: String,
-//artists: Box<[String]>,
+//struct Track {}
+
+//struct Episode {}
+
+//enum PlayableItems {
+//Track(Track),
+//Episode(Episode),
 //}
 
 #[derive(Debug)]
-pub struct CurrentlyPlaying {
+pub struct CurrentlyPlayingData {
+    pub item: Option<PlayableItem>,
+    pub progress_ms: Option<Duration>,
     pub is_playing: bool,
-    //r#type: String,
-    //pub name: String,
-    pub progress_ms: Option<chrono::TimeDelta>,
-    //item: TrackObject,
+    pub timestamp: DateTime<Utc>,
 }

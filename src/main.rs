@@ -1,43 +1,46 @@
 use dotenv::dotenv;
 use rspotify::{prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
-use terminal_spotify::{get_env, CurrentlyPlaying};
+use terminal_spotify::{get_env, CurrentlyPlayingData};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
     let client_id = get_env("RSPOTIFY_CLIENT_ID");
     let client_secret = get_env("RSPOTIFY_CLIENT_SECRET");
 
     // user authentication
-    // returns a variable which all functions used to get data can be run on
-    let spotify = authorize_user(&client_id, &client_secret).await;
+    let spotify = authorize_user(&client_id, &client_secret).await?;
 
-    let currently_playing = spotify.current_user_playing_item().await.unwrap().unwrap();
+    // get currenlty playing track
+    let currently_playing = spotify.current_user_playing_item().await?.unwrap();
 
     if !currently_playing.is_playing {
         println!("Not listening to anything");
-        return;
+        return Ok(());
     }
 
-    let data = CurrentlyPlaying {
+    let currently_playing_data = CurrentlyPlayingData {
         is_playing: currently_playing.is_playing,
+        item: currently_playing.item,
         progress_ms: currently_playing.progress,
+        timestamp: currently_playing.timestamp,
     };
 
-    println!("Currently playing: {:?}", data);
+    println!("Currently playing: {:?}", currently_playing_data);
 
-    //loop {
-    //println!("bruh bruh");
-    //thread::sleep(Duration::new(2, 0))
-    //}
+    Ok(())
 }
 
-async fn authorize_user(client_id: &str, client_secret: &str) -> AuthCodeSpotify {
+const REDIRECT_URI: &str = "http://localhost:8888/callback";
+
+async fn authorize_user(
+    client_id: &str,
+    client_secret: &str,
+) -> Result<AuthCodeSpotify, Box<dyn std::error::Error>> {
     let creds = Credentials::new(client_id, client_secret);
-    // localhost:8888 is currently just an express server with one endpoint, callback
     let oauth = OAuth {
-        redirect_uri: "http://localhost:8888/callback".to_string(),
+        redirect_uri: REDIRECT_URI.to_string(),
         scopes: scopes!(
             "user-read-playback-state",
             "user-read-currently-playing",
@@ -48,9 +51,8 @@ async fn authorize_user(client_id: &str, client_secret: &str) -> AuthCodeSpotify
 
     let spotify = AuthCodeSpotify::new(creds, oauth);
 
-    let url = spotify.get_authorize_url(false).unwrap();
-    spotify.prompt_for_token(&url).await.unwrap();
+    let url = spotify.get_authorize_url(false)?;
+    spotify.prompt_for_token(&url).await?;
 
-    // no need to parse response code, just return the AuthCodeSpotify
-    return spotify;
+    Ok(spotify)
 }
