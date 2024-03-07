@@ -1,9 +1,5 @@
-## control spotify solely by commands
+## work in progress
 
-why use it:
+### features
 
-- never leave terminal
-
-- use vim
-
-- never leave terminal
+- control spotify player in the terminal using commands

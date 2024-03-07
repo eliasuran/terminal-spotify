@@ -1,6 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use rspotify::model::{ArtistId, PlayableItem};
-use std::env;
+use std::{env, io};
+
+///// FUNCTIONS /////
 
 pub fn get_env(variable: &str) -> String {
     let env_var = match env::var(variable) {
@@ -11,6 +13,22 @@ pub fn get_env(variable: &str) -> String {
         }
     };
     return env_var.to_string();
+}
+
+pub fn user_input() -> String {
+    fn read_input() -> Result<String, io::Error> {
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        Ok(input)
+    }
+
+    let input = read_input();
+
+    match input {
+        Ok(input) => input,
+        Err(_) => String::new(),
+    }
 }
 
 ///// STRUCTS /////
