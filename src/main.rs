@@ -1,3 +1,5 @@
+use std::io;
+
 use dotenv::dotenv;
 use rspotify::{prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
 use terminal_spotify::{get_env, CurrentlyPlayingData};
@@ -29,7 +31,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Currently playing: {:?}", currently_playing_data);
 
+    loop {
+        let user_input = user_input();
+
+        println!("You wrote {}", user_input);
+
+        if user_input.trim() == "exit" {
+            println!("exiting");
+            break;
+        }
+    }
+
+    println!("Exiting..");
+
     Ok(())
+}
+
+fn user_input() -> String {
+    fn read_input() -> Result<String, io::Error> {
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        Ok(input)
+    }
+
+    let input = read_input();
+
+    match input {
+        Ok(input) => input,
+        Err(_) => String::new(),
+    }
 }
 
 const REDIRECT_URI: &str = "http://localhost:8888/callback";
