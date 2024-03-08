@@ -1,3 +1,4 @@
+use chrono::Duration;
 use dotenv::dotenv;
 use rspotify::{
     model::CurrentlyPlayingContext, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth,
@@ -34,11 +35,11 @@ async fn authorize_user(
 
 // get all available devices
 // ex: get_currently_playing() is not allowed unless something is playing
-async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(Option<String>, bool)> {
+async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(Option<String>, String, bool)> {
     let devices = spotify.device().await.unwrap();
     devices
         .iter()
-        .map(|device| (device.id.clone(), device.is_active))
+        .map(|device| (device.id.clone(), device.name.clone(), device.is_active))
         .collect()
 }
 
@@ -78,31 +79,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let devices = get_available_devices(&spotify).await;
 
-    let mut active_device = String::from("");
+    let mut active_device_id = String::from("");
 
-    for (device_id, is_active) in devices {
-        println!(
-            "Device ID: {}, Active: {}",
-            device_id.as_deref().unwrap_or(""),
-            is_active
-        );
-        if is_active && device_id != Some(String::from("")) {
-            active_device = device_id.as_deref().unwrap_or("").to_string()
+    for (id, name, is_active) in devices {
+        println!("Devic name: {}, Active: {}", name, is_active);
+        if is_active && id != Some("".to_string()) {
+            active_device_id = id.as_deref().unwrap_or("").to_string()
         }
     }
 
-    println!("The active device's id: {}", active_device);
+    println!("Active device: {}", active_device_id);
 
     loop {
         let user_input = user_input();
 
-        match user_input.as_str() {
-            "play" => println!("boiii"),
-            _ => println!("nothing written"),
-        }
-
         if user_input.trim() == "exit" {
             break;
+        }
+
+        match user_input.trim() {
+            "play" => {
+                if active_device_id == "" {
+                    println!("No active device");
+                    return Ok(());
+                }
+                let _ = spotify
+                    .resume_playback(Some(&active_device_id), Duration::zero().into())
+                    .await;
+                println!("Resumed playback")
+            }
+            _ => println!("Command not found: {}", user_input),
         }
     }
 
