@@ -1,6 +1,8 @@
 use dotenv::dotenv;
-use rspotify::{prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
-use terminal_spotify::{get_env, user_input, CurrentlyPlayingData};
+use rspotify::{
+    model::CurrentlyPlayingContext, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth,
+};
+use terminal_spotify::{get_env, user_input};
 
 const REDIRECT_URI: &str = "http://localhost:8888/callback";
 
@@ -27,24 +29,25 @@ async fn authorize_user(
     Ok(spotify)
 }
 
-// used to check if certain functions are allowed
+// gets the state of the player (is a device active or not)
+// TODO: get playback state to check currently running device
+
+// get all available devices
 // ex: get_currently_playing() is not allowed unless something is playing
-async fn get_player_status(spotify: &AuthCodeSpotify) -> bool {
-    let currently_playing = spotify.current_user_playing_item().await;
-    match currently_playing {
-        Ok(_) => {
-            if currently_playing.unwrap().unwrap().is_playing {
-                return true;
-            }
-            return false;
-        }
-        Err(_) => return false,
-    }
+async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(Option<String>, bool)> {
+    let devices = spotify.device().await.unwrap();
+    devices
+        .iter()
+        .map(|device| (device.id.clone(), device.is_active))
+        .collect()
 }
 
+// activates a device based on id
+// async fn activate_device(spotify: &AuthCodeSpotify, id: &str) {}
+
 async fn get_currently_playing(
-    spotify: AuthCodeSpotify,
-) -> Result<CurrentlyPlayingData, Box<dyn std::error::Error>> {
+    spotify: &AuthCodeSpotify,
+) -> Result<CurrentlyPlayingContext, Box<dyn std::error::Error>> {
     //fetch
     let currently_playing = spotify.current_user_playing_item().await?.unwrap();
 
@@ -52,15 +55,12 @@ async fn get_currently_playing(
         println!("Not listening to anything");
     }
 
-    let currently_playing_data = CurrentlyPlayingData {
-        is_playing: currently_playing.is_playing,
-        item: currently_playing.item,
-        progress_ms: currently_playing.progress,
-        timestamp: currently_playing.timestamp,
-    };
-
-    Ok(currently_playing_data)
+    Ok(currently_playing)
 }
+
+// TODO: add function to activate device?
+
+// TODO: add function to start / resume playback
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -76,14 +76,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // user authentication
     let spotify = authorize_user(&client_id, &client_secret).await?;
 
+    let devices = get_available_devices(&spotify).await;
+
+    let mut active_device = String::from("");
+
+    for (device_id, is_active) in devices {
+        println!(
+            "Device ID: {}, Active: {}",
+            device_id.as_deref().unwrap_or(""),
+            is_active
+        );
+        if is_active && device_id != Some(String::from("")) {
+            active_device = device_id.as_deref().unwrap_or("").to_string()
+        }
+    }
+
+    println!("The active device's id: {}", active_device);
+
     loop {
-        let status = get_player_status(&spotify).await;
-
-        println!("{:?}", status);
-
         let user_input = user_input();
 
-        println!("You wrote {}", user_input);
+        match user_input.as_str() {
+            "play" => println!("boiii"),
+            _ => println!("nothing written"),
+        }
 
         if user_input.trim() == "exit" {
             break;
