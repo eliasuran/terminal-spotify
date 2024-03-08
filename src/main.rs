@@ -103,10 +103,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("No active device");
                     return Ok(());
                 }
-                let _ = spotify
+                match spotify
                     .resume_playback(Some(&active_device_id), Duration::zero().into())
-                    .await;
-                println!("Resumed playback")
+                    .await
+                {
+                    Ok(_) => println!("Resumed playback"),
+                    Err(_) => println!("Could not resume playback"),
+                };
             }
             _ => println!("Command not found: {}", user_input),
         }
