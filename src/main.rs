@@ -1,4 +1,4 @@
-use chrono::Duration;
+use chrono::{Duration, TimeDelta};
 use dotenv::dotenv;
 use rspotify::{
     model::CurrentlyPlayingContext, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth,
@@ -44,12 +44,14 @@ async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(Option<String>
         .collect()
 }
 
-// activates a device based on id
-// async fn activate_device(spotify: &AuthCodeSpotify, id: &str) {}
-
+#[derive(Debug)]
+struct CurrentlyPlaying {
+    is_playing: bool,
+    progress: Option<TimeDelta>,
+}
 async fn get_currently_playing(
     spotify: &AuthCodeSpotify,
-) -> Result<CurrentlyPlayingContext, Box<dyn std::error::Error>> {
+) -> Result<CurrentlyPlaying, Box<dyn std::error::Error>> {
     //fetch
     let currently_playing = spotify.current_user_playing_item().await?.unwrap();
 
@@ -57,7 +59,12 @@ async fn get_currently_playing(
         println!("Not listening to anything");
     }
 
-    Ok(currently_playing)
+    let currently_playing_data = CurrentlyPlaying {
+        is_playing: currently_playing.is_playing,
+        progress: currently_playing.progress,
+    };
+
+    Ok(currently_playing_data)
 }
 
 // TODO: add function to activate device?
@@ -104,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match user_input.trim() {
             "play" => {
+                // TODO: find a way to better check for active_device_id where it is needed
                 if active_device_id == "" {
                     println!("Can't resume playback because there is no active device");
                     continue;
@@ -125,6 +133,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(_) => println!("Paused playback"),
                     Err(err) => println!("Could not pause playback: {}", err),
                 }
+            }
+            "status" => {
+                if active_device_id == "" {
+                    println!("Can't pause playback because there is no active device");
+                    continue;
+                }
+                let currently_playing = get_currently_playing(&spotify).await;
+                println!("Currenlty playing: {:?}", currently_playing)
             }
             "exit" => break,
             _ => println!("Command not found: {}", user_input),
