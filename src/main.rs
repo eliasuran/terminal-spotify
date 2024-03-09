@@ -1,11 +1,10 @@
 use chrono::{Duration, TimeDelta};
 use dotenv::dotenv;
-use rspotify::{
-    model::CurrentlyPlayingContext, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth,
-};
+use rspotify::{model::PlayableItem, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
 use std::io::Write;
 use terminal_spotify::{get_env, user_input};
 
+// has to be &str can't call String::from outside fn ?
 const REDIRECT_URI: &str = "http://localhost:8888/callback";
 
 async fn authorize_user(
@@ -48,6 +47,8 @@ async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(Option<String>
 struct CurrentlyPlaying {
     is_playing: bool,
     progress: Option<TimeDelta>,
+    song_name: String,
+    artists: Vec<String>,
 }
 async fn get_currently_playing(
     spotify: &AuthCodeSpotify,
@@ -55,13 +56,21 @@ async fn get_currently_playing(
     //fetch
     let currently_playing = spotify.current_user_playing_item().await?.unwrap();
 
-    if !currently_playing.is_playing {
-        println!("Not listening to anything");
-    }
-
     let currently_playing_data = CurrentlyPlaying {
         is_playing: currently_playing.is_playing,
         progress: currently_playing.progress,
+        song_name: match currently_playing.clone().item.unwrap() {
+            PlayableItem::Track(track) => track.name,
+            PlayableItem::Episode(episode) => episode.name,
+        },
+        artists: match currently_playing.item.unwrap() {
+            PlayableItem::Track(track) => track
+                .artists
+                .iter()
+                .map(|artist| (artist.name.clone()))
+                .collect(),
+            PlayableItem::Episode(..) => vec![String::from("")],
+        },
     };
 
     Ok(currently_playing_data)
@@ -87,16 +96,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let devices = get_available_devices(&spotify).await;
 
+    // TODO: make this store a vec of the active device, not just a string of the id
     let mut active_device_id = String::from("");
 
-    for (id, name, is_active) in devices {
-        println!("Devic name: {}, Active: {}", name, is_active);
-        if is_active && id != Some("".to_string()) {
-            active_device_id = id.as_deref().unwrap_or("").to_string()
+    if devices.len() == 0 {
+        println!("No devices available currently")
+    } else {
+        println!("Available devices:");
+        for (id, name, is_active) in devices {
+            println!("Device name: {}, Active: {}", name, is_active);
+            if is_active && id != Some("".to_string()) {
+                active_device_id = id.as_deref().unwrap_or("").to_string();
+            }
         }
     }
-
-    println!("Active device: {}", active_device_id);
 
     loop {
         // force print out the > to make it appear before user_input
@@ -139,8 +152,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("Can't pause playback because there is no active device");
                     continue;
                 }
-                let currently_playing = get_currently_playing(&spotify).await;
-                println!("Currenlty playing: {:?}", currently_playing)
+                let currently_playing = get_currently_playing(&spotify).await?;
+
+                if !currently_playing.is_playing {
+                    println!("You are not listening to anything at the moment");
+                    continue;
+                }
+
+                if currently_playing.is_playing {
+                    println!(
+                        "You are listening to {} by {}. Progress: {}",
+                        currently_playing.song_name,
+                        currently_playing.artists.join(", "),
+                        // TODO: make this display with this format minutes:seconds, ex: 16:47
+                        match currently_playing.progress {
+                            Some(time) => time.num_seconds(),
+                            None => 0,
+                        }
+                    );
+                }
             }
             "exit" => break,
             _ => println!("Command not found: {}", user_input),
