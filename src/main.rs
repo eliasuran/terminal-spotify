@@ -3,6 +3,7 @@ use dotenv::dotenv;
 use rspotify::{
     model::CurrentlyPlayingContext, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth,
 };
+use std::io::Write;
 use terminal_spotify::{get_env, user_input};
 
 const REDIRECT_URI: &str = "http://localhost:8888/callback";
@@ -91,26 +92,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Active device: {}", active_device_id);
 
     loop {
+        // force print out the > to make it appear before user_input
+        print!("> ");
+        std::io::stdout().flush().unwrap();
+
         let user_input = user_input();
 
-        if user_input.trim() == "exit" {
-            break;
+        if user_input.trim().is_empty() {
+            continue;
         }
 
         match user_input.trim() {
             "play" => {
                 if active_device_id == "" {
-                    println!("No active device");
-                    return Ok(());
+                    println!("Can't resume playback because there is no active device");
+                    continue;
                 }
                 match spotify
                     .resume_playback(Some(&active_device_id), Duration::zero().into())
                     .await
                 {
                     Ok(_) => println!("Resumed playback"),
-                    Err(_) => println!("Could not resume playback"),
-                };
+                    Err(err) => println!("Could not resume playback: {}", err),
+                }
             }
+            "pause" => {
+                if active_device_id == "" {
+                    println!("Can't pause playback because there is no active device");
+                    continue;
+                }
+                match spotify.pause_playback(Some(&active_device_id)).await {
+                    Ok(_) => println!("Paused playback"),
+                    Err(err) => println!("Could not pause playback: {}", err),
+                }
+            }
+            "exit" => break,
             _ => println!("Command not found: {}", user_input),
         }
     }
