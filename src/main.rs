@@ -96,8 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let devices = get_available_devices(&spotify).await;
 
-    // TODO: make this store a vec of the active device, not just a string of the id
-    let mut active_device_id = String::from("");
+    let mut active_device: (String, String, bool) = ("".to_string(), "".to_string(), false);
 
     if devices.len() == 0 {
         println!("No devices available currently")
@@ -106,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for (id, name, is_active) in devices {
             println!("Device name: {}, Active: {}", name, is_active);
             if is_active && id != Some("".to_string()) {
-                active_device_id = id.as_deref().unwrap_or("").to_string();
+                active_device = (id.as_deref().unwrap_or("").to_string(), name, is_active)
             }
         }
     }
@@ -125,12 +124,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match user_input.trim() {
             "play" => {
                 // TODO: find a way to better check for active_device_id where it is needed
-                if active_device_id == "" {
+                if active_device.0 == "" {
                     println!("Can't resume playback because there is no active device");
                     continue;
                 }
                 match spotify
-                    .resume_playback(Some(&active_device_id), Duration::zero().into())
+                    .resume_playback(Some(&active_device.0), Duration::zero().into())
                     .await
                 {
                     Ok(_) => println!("Resumed playback"),
@@ -138,17 +137,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "pause" => {
-                if active_device_id == "" {
+                if active_device.0 == "" {
                     println!("Can't pause playback because there is no active device");
                     continue;
                 }
-                match spotify.pause_playback(Some(&active_device_id)).await {
+                match spotify.pause_playback(Some(&active_device.0)).await {
                     Ok(_) => println!("Paused playback"),
                     Err(err) => println!("Could not pause playback: {}", err),
                 }
             }
             "status" => {
-                if active_device_id == "" {
+                if active_device.0 == "" {
                     println!("Can't pause playback because there is no active device");
                     continue;
                 }
