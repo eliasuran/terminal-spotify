@@ -1,4 +1,5 @@
 use chrono::{Duration, TimeDelta};
+use dialoguer::Select;
 use dotenv::dotenv;
 use rspotify::{model::PlayableItem, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
 use std::io::Write;
@@ -30,9 +31,6 @@ async fn authorize_user(
     Ok(spotify)
 }
 
-// gets the state of the player (is a device active or not)
-// TODO: get playback state to check currently running device
-
 // get all available devices
 // ex: get_currently_playing() is not allowed unless something is playing
 #[derive(Debug)]
@@ -41,12 +39,36 @@ struct Device {
     name: String,
     is_active: bool,
 }
-async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(Option<String>, String, bool)> {
+async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(String, String, bool)> {
     let devices = spotify.device().await.unwrap();
     devices
         .iter()
-        .map(|device| (device.id.clone(), device.name.clone(), device.is_active))
+        .map(|device| {
+            (
+                device.id.as_deref().unwrap_or("").to_string(),
+                device.name.clone(),
+                device.is_active,
+            )
+        })
         .collect()
+}
+
+fn print_devices(devices: &Vec<(String, String, bool)>, active_device: &mut Device) {
+    if devices.len() == 0 {
+        println!("No devices available currently");
+        return;
+    }
+    println!("Available devices:");
+    for (id, name, is_active) in devices {
+        println!("Device name: {}, Active: {}", name, is_active);
+        if *is_active && id != "" {
+            *active_device = Device {
+                id: id.clone(),
+                name: name.clone(),
+                is_active: *is_active,
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -83,6 +105,37 @@ async fn get_currently_playing(
 }
 
 // TODO: add function to activate device?
+async fn activate_device(
+    spotify: &AuthCodeSpotify,
+    devices: &Vec<(String, String, bool)>,
+    active_device: &mut Device,
+) {
+    let device_names: Vec<&str> = devices.iter().map(|device| (device.1.as_str())).collect();
+
+    let selection = Select::new()
+        .with_prompt("Choose the device you want to activate")
+        .items(&device_names[..])
+        .interact()
+        .unwrap();
+
+    for device in devices {
+        if device_names[selection] == device.1 {
+            *active_device = Device {
+                id: device.0.clone(),
+                name: device.1.clone(),
+                is_active: true,
+            }
+        }
+    }
+
+    match spotify
+        .transfer_playback(&active_device.id, Some(false))
+        .await
+    {
+        Ok(_) => println!("{} was activated", device_names[selection]),
+        Err(err) => println!("Could not activate the device: {}", err),
+    }
+}
 
 // TODO: add function to start / resume playback
 
@@ -108,21 +161,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         is_active: false,
     };
 
-    if devices.len() == 0 {
-        println!("No devices available currently")
-    } else {
-        println!("Available devices:");
-        for (id, name, is_active) in devices {
-            println!("Device name: {}, Active: {}", name, is_active);
-            if is_active && id != Some("".to_string()) {
-                active_device = Device {
-                    id: id.as_deref().unwrap_or("").to_string(),
-                    name,
-                    is_active,
-                }
-            }
-        }
-    }
+    // activates a device
+    print_devices(&devices, &mut active_device);
 
     loop {
         // force print out the > to make it appear before user_input
@@ -136,6 +176,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         match user_input.trim() {
+            "activate" => activate_device(&spotify, &devices, &mut active_device).await,
+            "devices" => print_devices(&devices, &mut active_device),
             "play" => {
                 // TODO: find a way to better check for active_device_id where it is needed
                 if active_device.id == "" {
