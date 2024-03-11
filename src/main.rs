@@ -177,7 +177,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match user_input.trim() {
             "activate" => activate_device(&spotify, &devices, &mut active_device).await,
-            "devices" => print_devices(&devices, &mut active_device),
+            "devices" => {
+                let devices = get_available_devices(&spotify).await;
+                print_devices(&devices, &mut active_device)
+            }
             "play" => {
                 // TODO: find a way to better check for active_device_id where it is needed
                 if active_device.id == "" {
