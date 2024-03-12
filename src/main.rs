@@ -1,9 +1,10 @@
 use chrono::{Duration, TimeDelta};
+use colored::Colorize;
 use dialoguer::Select;
 use dotenv::dotenv;
 use rspotify::{model::PlayableItem, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
-use std::io::Write;
-use terminal_spotify::{get_env, user_input};
+use std::{io::Write, num::ParseIntError};
+use terminal_spotify::{get_env, print_err, printf_err, user_input};
 
 // has to be &str can't call String::from outside fn ?
 const REDIRECT_URI: &str = "http://localhost:8888/callback";
@@ -39,6 +40,15 @@ struct Device {
     name: String,
     is_active: bool,
 }
+impl Default for Device {
+    fn default() -> Self {
+        Device {
+            id: "".to_string(),
+            name: "".to_string(),
+            is_active: false,
+        }
+    }
+}
 async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(String, String, bool)> {
     let devices = spotify.device().await.unwrap();
     devices
@@ -55,10 +65,12 @@ async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(String, String
 
 fn print_devices(devices: &Vec<(String, String, bool)>, active_device: &mut Device) {
     if devices.len() == 0 {
-        println!("No devices available currently");
+        print_err("No devices available currently");
         return;
     }
+
     println!("Available devices:");
+
     for (id, name, is_active) in devices {
         println!("Device name: {}, Active: {}", name, is_active);
         if *is_active && id != "" {
@@ -67,6 +79,12 @@ fn print_devices(devices: &Vec<(String, String, bool)>, active_device: &mut Devi
                 name: name.clone(),
                 is_active: *is_active,
             }
+        }
+    }
+
+    if active_device.id == "" {
+        *active_device = Device {
+            ..Default::default()
         }
     }
 }
@@ -133,7 +151,7 @@ async fn activate_device(
         .await
     {
         Ok(_) => println!("{} was activated", device_names[selection]),
-        Err(err) => println!("Could not activate the device: {}", err),
+        Err(err) => printf_err("Could not activate the device", err),
     }
 }
 
@@ -156,23 +174,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let devices = get_available_devices(&spotify).await;
 
     let mut active_device = Device {
-        id: "".to_string(),
-        name: "".to_string(),
-        is_active: false,
+        ..Default::default()
     };
 
-    // activates a device
+    // prints and sets active_device
     print_devices(&devices, &mut active_device);
 
     loop {
         // force print out the > to make it appear before user_input
-        print!("> ");
+        print!("{} ", "->".bold().bright_green());
         std::io::stdout().flush().unwrap();
 
         let user_input = user_input();
 
         if user_input.trim().is_empty() {
             continue;
+        }
+
+        let mut currently_playing = CurrentlyPlaying {
+            is_playing: false,
+            progress: Duration::new(0, 0),
+            song_name: "".to_string(),
+            artists: vec![],
+        };
+
+        if active_device.id != "" {
+            currently_playing = get_currently_playing(&spotify).await?;
         }
 
         match user_input.trim() {
@@ -184,7 +211,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "play" => {
                 // TODO: find a way to better check for active_device_id where it is needed
                 if active_device.id == "" {
-                    println!("Can't resume playback because there is no active device");
+                    print_err("Can't resume playback because there is no active device");
+                    continue;
+                }
+                if currently_playing.is_playing {
+                    println!("Already playing");
                     continue;
                 }
                 match spotify
@@ -192,26 +223,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .await
                 {
                     Ok(_) => println!("Resumed playback"),
-                    Err(err) => println!("Could not resume playback: {}", err),
+                    Err(err) => printf_err("Could not resume playback", err),
                 }
             }
             "pause" => {
                 if active_device.id == "" {
-                    println!("Can't pause playback because there is no active device");
+                    print_err("Can't pause playback because there is no active device");
+                    continue;
+                }
+                if !currently_playing.is_playing {
+                    println!("Already paused");
                     continue;
                 }
                 match spotify.pause_playback(Some(&active_device.id)).await {
                     Ok(_) => println!("Paused playback"),
-                    Err(err) => println!("Could not pause playback: {}", err),
+                    Err(err) => printf_err("Could not pause playback", err),
                 }
             }
             "status" => {
-                if active_device.id == "" {
-                    println!("Can't pause playback because there is no active device");
-                    continue;
-                }
-                let currently_playing = get_currently_playing(&spotify).await?;
-
                 if !currently_playing.is_playing {
                     println!("You are not listening to anything at the moment");
                     continue;
@@ -231,7 +260,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "exit" => break,
-            _ => println!("Command not found: {}", user_input),
+            _ => printf_err("Command not found", user_input),
         }
     }
 

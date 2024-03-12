@@ -1,4 +1,5 @@
-use std::{env, io};
+use colored::Colorize;
+use std::{env, fmt::Display, io};
 
 ///// FUNCTIONS /////
 
@@ -27,4 +28,17 @@ pub fn user_input() -> String {
         Ok(input) => input,
         Err(_) => String::new(),
     }
+}
+
+pub fn print_err(text: &str) {
+    println!("{}", text.bold().bright_red())
+}
+
+// printf from go, can accept an extra argument
+pub fn printf_err<T: Display>(text: &str, err: T) {
+    println!(
+        "{}: {}",
+        text.bold().bright_red(),
+        err.to_string().bold().bright_red()
+    )
 }
