@@ -203,10 +203,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         match user_input.trim() {
+            "help" => println!("Use 'commands' for a list of available commands"),
+            "commands" => println!(
+                "Available commands:\n\n{}\ncommands -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nstatus -> get status of currently selected song",
+                "Always available".bold().yellow(),
+                "If a device is active:".bold().green()
+            ),
             "activate" => activate_device(&spotify, &devices, &mut active_device).await,
             "devices" => {
                 let devices = get_available_devices(&spotify).await;
                 print_devices(&devices, &mut active_device)
+            }
+            "p" => {
+                if active_device.id == "" {
+                    print_err("Can't resume/pause playback because there is no active device");
+                    continue;
+                }
+                if currently_playing.is_playing {
+                    match spotify.pause_playback(Some(&active_device.id)).await {
+                        Ok(_) => println!("Paused playback"),
+                        Err(err) => printf_err("Could not pause playback", err),
+                    }
+                    continue
+                }
+                match spotify
+                    .resume_playback(Some(&active_device.id), Duration::zero().into())
+                    .await
+                {
+                    Ok(_) => println!("Resumed playback"),
+                    Err(err) => printf_err("Could not resume playback", err),
+                }
             }
             "play" => {
                 // TODO: find a way to better check for active_device_id where it is needed
@@ -238,6 +264,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match spotify.pause_playback(Some(&active_device.id)).await {
                     Ok(_) => println!("Paused playback"),
                     Err(err) => printf_err("Could not pause playback", err),
+                }
+            }
+            "restart" => {
+                // use seek to position to set position to 0 ms
+                match spotify.seek_track(Duration::zero().into(), Some(&active_device.id)).await {
+                    Ok(_) => println!("Restarted track"),
+                    Err(err) => printf_err("Could not restart track", err),
+                }
+            }
+            "next" => {
+                match spotify.next_track(Some(&active_device.id)).await {
+                    Ok(_) => println!("Skipped to next track"),
+                    Err(err) => printf_err("Could not skip to next track", err),
+                }
+            }
+            "previous" => {
+                match spotify.previous_track(Some(&active_device.id)).await {
+                    Ok(_) => println!("Skipped to previous track"),
+                    Err(err) => printf_err("Could not skip to previous track", err),
                 }
             }
             "status" => {
