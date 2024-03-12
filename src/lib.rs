@@ -1,5 +1,3 @@
-use chrono::{DateTime, Duration, Utc};
-use rspotify::model::{ArtistId, PlayableItem};
 use std::{env, io};
 
 ///// FUNCTIONS /////
@@ -29,33 +27,4 @@ pub fn user_input() -> String {
         Ok(input) => input,
         Err(_) => String::new(),
     }
-}
-
-///// STRUCTS /////
-#[derive(Debug)]
-pub struct Artists {
-    pub id: Option<ArtistId<'static>>,
-    pub name: String,
-}
-
-#[derive(Debug)]
-pub struct Track {
-    pub artists: Vec<Artists>,
-}
-
-#[derive(Debug)]
-pub struct Episode {}
-
-#[derive(Debug)]
-pub enum PlayableItems {
-    Track(Track),
-    Episode(Episode),
-}
-
-#[derive(Debug)]
-pub struct CurrentlyPlayingData {
-    pub item: Option<PlayableItem>,
-    pub progress_ms: Option<Duration>,
-    pub is_playing: bool,
-    pub timestamp: DateTime<Utc>,
 }
