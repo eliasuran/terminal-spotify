@@ -1,5 +1,9 @@
 use colored::Colorize;
-use std::{env, fmt::Display, io};
+use std::{
+    env,
+    fmt::Display,
+    io::{self, Write},
+};
 
 ///// FUNCTIONS /////
 
@@ -41,4 +45,24 @@ pub fn printf_err<T: Display>(text: &str, err: T) {
         text.bold().bright_red(),
         err.to_string().bold().bright_red()
     )
+}
+
+// dont leave :(
+pub fn you_can_not_leave() -> bool {
+    println!("Are you sure you want to exit[N/y]");
+    std::io::stdout().flush().unwrap();
+
+    let input = user_input();
+
+    if input.trim().to_lowercase() == "xdd" {
+        return true;
+    }
+
+    if input.trim().to_lowercase() == "n" || input.trim().to_lowercase() == "no" {
+        println!("great <3");
+        return false;
+    }
+
+    print_err("Answer not good enough, you can't leave");
+    false
 }

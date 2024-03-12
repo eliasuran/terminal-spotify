@@ -4,7 +4,7 @@ use dialoguer::Select;
 use dotenv::dotenv;
 use rspotify::{model::PlayableItem, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
 use std::{io::Write, num::ParseIntError};
-use terminal_spotify::{get_env, print_err, printf_err, user_input};
+use terminal_spotify::{get_env, print_err, printf_err, user_input, you_can_not_leave};
 
 // has to be &str can't call String::from outside fn ?
 const REDIRECT_URI: &str = "http://localhost:8888/callback";
@@ -205,7 +205,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match user_input.trim() {
             "help" => println!("Use 'commands' for a list of available commands"),
             "commands" => println!(
-                "Available commands:\n\n{}\ncommands -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nstatus -> get status of currently selected song",
+                "Available commands:\n\n{}\ncommands -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nstatus -> get status of currently selected song",
                 "Always available".bold().yellow(),
                 "If a device is active:".bold().green()
             ),
@@ -279,7 +279,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(err) => printf_err("Could not skip to next track", err),
                 }
             }
-            "previous" => {
+            "prev" | "previous" => {
                 match spotify.previous_track(Some(&active_device.id)).await {
                     Ok(_) => println!("Skipped to previous track"),
                     Err(err) => printf_err("Could not skip to previous track", err),
@@ -304,7 +304,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
-            "exit" => break,
+            "exit" => {
+                let exit_condition = you_can_not_leave();
+                if exit_condition {
+                    break
+                }
+            },
             _ => printf_err("Command not found", user_input),
         }
     }
