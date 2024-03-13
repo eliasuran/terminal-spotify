@@ -2,8 +2,12 @@ use chrono::{Duration, TimeDelta};
 use colored::Colorize;
 use dialoguer::Select;
 use dotenv::dotenv;
-use rspotify::{model::PlayableItem, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
-use std::{io::Write, num::ParseIntError};
+use rspotify::{
+    model::{PlayableItem, SearchType},
+    prelude::*,
+    scopes, AuthCodeSpotify, Credentials, OAuth,
+};
+use std::io::Write;
 use terminal_spotify::{get_env, print_err, printf_err, user_input, you_can_not_leave};
 
 // has to be &str can't call String::from outside fn ?
@@ -122,6 +126,13 @@ async fn get_currently_playing(
     Ok(currently_playing_data)
 }
 
+async fn search(spotify: &AuthCodeSpotify) {
+    let res = spotify
+        .search("Hiiipower", SearchType::Track, None, None, Some(5), Some(0))
+        .await;
+    println!("{:?}", res)
+}
+
 // TODO: add function to activate device?
 async fn activate_device(
     spotify: &AuthCodeSpotify,
@@ -171,6 +182,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // user authentication
     let spotify = authorize_user(&client_id, &client_secret).await?;
 
+    search(&spotify).await;
+
     let devices = get_available_devices(&spotify).await;
 
     let mut active_device = Device {
@@ -205,7 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match user_input.trim() {
             "help" => println!("Use 'commands' for a list of available commands"),
             "commands" => println!(
-                "Available commands:\n\n{}\ncommands -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nstatus -> get status of currently selected song",
+                "Available commands:\n\n{}\ncommands -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nforward/back -> select amount of seconds to go back or forward\nstatus -> get status of currently selected song",
                 "Always available".bold().yellow(),
                 "If a device is active:".bold().green()
             ),
@@ -283,6 +296,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match spotify.previous_track(Some(&active_device.id)).await {
                     Ok(_) => println!("Skipped to previous track"),
                     Err(err) => printf_err("Could not skip to previous track", err),
+                }
+            }
+            "fwd" | "forward" => {
+                let seconds = vec![5, 10, 15, 20, 30, 45, 60];
+                let selection = Select::new()
+                    .with_prompt("Choose how many seconds forward you want to go")
+                    .items(&seconds)
+                    .interact()
+                    .unwrap();
+                let seconds_forward = currently_playing.progress.unwrap_or(Duration::zero()).num_seconds() + seconds[selection];
+                match spotify.seek_track(Duration::new(seconds_forward as i64, 0).unwrap(), Some(&active_device.id)).await {
+                    Ok(_) => println!("Skipped forward {} seconds", seconds[selection]),
+                    Err(err) => printf_err("Could not skip forward", err)
+                }
+            }
+            "back" => {
+                let seconds = vec![5, 10, 15, 20, 30, 45, 60];
+                let selection = Select::new()
+                    .with_prompt("Choose how many seconds back you want to go")
+                    .items(&seconds)
+                    .interact()
+                    .unwrap();
+                let mut seconds_back = currently_playing.progress.unwrap_or(Duration::zero()).num_seconds() - seconds[selection];
+                if seconds_back < 0 {
+                    seconds_back = 0
+                }
+                match spotify.seek_track(Duration::new(seconds_back, 0).unwrap(), Some(&active_device.id)).await {
+                    Ok(_) => println!("Skipped back {} seconds", seconds[selection]),
+                    Err(err) => printf_err("Could not skip back", err)
                 }
             }
             "status" => {
