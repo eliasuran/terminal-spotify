@@ -3,7 +3,7 @@ use colored::Colorize;
 use dialoguer::Select;
 use dotenv::dotenv;
 use rspotify::{
-    model::{PlayableItem, SearchType},
+    model::{PlayableItem, SearchResult, SearchType, TrackId},
     prelude::*,
     scopes, AuthCodeSpotify, Credentials, OAuth,
 };
@@ -126,11 +126,44 @@ async fn get_currently_playing(
     Ok(currently_playing_data)
 }
 
-async fn search(spotify: &AuthCodeSpotify) {
+#[derive(Debug)]
+struct SearchRes {
+    id: String,
+    song_name: String,
+    artists: Vec<String>,
+}
+async fn search(spotify: &AuthCodeSpotify, query: &str) -> Vec<SearchRes> {
     let res = spotify
-        .search("Hiiipower", SearchType::Track, None, None, Some(5), Some(0))
+        .search(query, SearchType::Track, None, None, Some(5), None)
         .await;
-    println!("{:?}", res)
+
+    // flat_map cause have to do 2 iterations
+    let search_data: Vec<SearchRes> = res
+        .iter()
+        .flat_map(|result| match result {
+            SearchResult::Tracks(tracks) => tracks
+                .clone()
+                .items
+                .into_iter()
+                .map(|track| SearchRes {
+                    id: match track.id {
+                        Some(id) => id.to_string().split_inclusive(":").collect::<Vec<&str>>()[2]
+                            .to_string(),
+                        None => "".to_string(),
+                    },
+                    song_name: track.name.clone(),
+                    artists: track
+                        .artists
+                        .iter()
+                        .map(|artist| (artist.name.clone()))
+                        .collect(),
+                })
+                .collect::<Vec<SearchRes>>(),
+            _ => vec![],
+        })
+        .collect();
+
+    search_data
 }
 
 // TODO: add function to activate device?
@@ -182,8 +215,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // user authentication
     let spotify = authorize_user(&client_id, &client_secret).await?;
 
-    search(&spotify).await;
-
     let devices = get_available_devices(&spotify).await;
 
     let mut active_device = Device {
@@ -198,9 +229,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{} ", "->".bold().bright_green());
         std::io::stdout().flush().unwrap();
 
-        let user_input = user_input();
+        let input = user_input();
 
-        if user_input.trim().is_empty() {
+        if input.trim().is_empty() {
             continue;
         }
 
@@ -215,7 +246,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             currently_playing = get_currently_playing(&spotify).await?;
         }
 
-        match user_input.trim() {
+        match input.trim() {
             "help" => println!("Use 'commands' for a list of available commands"),
             "commands" => println!(
                 "Available commands:\n\n{}\ncommands -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nforward/back -> select amount of seconds to go back or forward\nstatus -> get status of currently selected song",
@@ -226,6 +257,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "devices" => {
                 let devices = get_available_devices(&spotify).await;
                 print_devices(&devices, &mut active_device)
+            }
+            "search" | "s" => {
+                print!("Search for a song: ");
+                std::io::stdout().flush().unwrap();
+
+                let q = user_input();
+                let search_data = search(&spotify, q.trim()).await;
+
+                let search_data_names: Vec<&str> = search_data
+                    .iter()
+                    .map(|device| (device.song_name.as_str()))
+                    .collect();
+
+                let selection = Select::new()
+                    .with_prompt("Choose the device you want to activate")
+                    .items(&search_data_names[..])
+                    .interact()
+                    .unwrap();
+
+                let index = search_data.iter().position(|n| n.song_name == search_data_names[selection]).unwrap();
+
+                println!("{:?}", search_data[index])
             }
             "p" => {
                 if active_device.id == "" {
@@ -352,7 +405,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     break
                 }
             },
-            _ => printf_err("Command not found", user_input),
+            _ => printf_err("Command not found", input),
         }
     }
 
