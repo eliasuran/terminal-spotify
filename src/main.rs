@@ -127,39 +127,39 @@ async fn get_currently_playing(
 }
 
 #[derive(Debug)]
-struct SearchRes {
-    id: String,
+struct SearchRes<'a> {
+    id: TrackId<'a>, // Use the lifetime parameter for TrackId
     song_name: String,
     artists: Vec<String>,
 }
-async fn search(spotify: &AuthCodeSpotify, query: &str) -> Vec<SearchRes> {
+
+async fn search<'a>(spotify: &AuthCodeSpotify, query: &str) -> Vec<SearchRes<'a>> {
     let res = spotify
         .search(query, SearchType::Track, None, None, Some(5), None)
         .await;
 
     // flat_map cause have to do 2 iterations
-    let search_data: Vec<SearchRes> = res
+    let search_data: Vec<SearchRes<'_>> = res
         .iter()
-        .flat_map(|result| match result {
-            SearchResult::Tracks(tracks) => tracks
-                .clone()
-                .items
-                .into_iter()
-                .map(|track| SearchRes {
-                    id: match track.id {
-                        Some(id) => id.to_string().split_inclusive(":").collect::<Vec<&str>>()[2]
-                            .to_string(),
-                        None => "".to_string(),
-                    },
-                    song_name: track.name.clone(),
-                    artists: track
-                        .artists
-                        .iter()
-                        .map(|artist| (artist.name.clone()))
-                        .collect(),
-                })
-                .collect::<Vec<SearchRes>>(),
-            _ => vec![],
+        .flat_map(|result: &_| {
+            // Lifetime for closure argument
+            match result {
+                SearchResult::Tracks(tracks) => tracks
+                    .clone()
+                    .items
+                    .into_iter()
+                    .map(|track| SearchRes {
+                        id: track.id.unwrap().clone(),
+                        song_name: track.name.clone(),
+                        artists: track
+                            .artists
+                            .iter()
+                            .map(|artist| artist.name.clone())
+                            .collect(),
+                    })
+                    .collect::<Vec<SearchRes<'_>>>(),
+                _ => vec![],
+            }
         })
         .collect();
 
@@ -249,7 +249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match input.trim() {
             "help" => println!("Use 'commands' for a list of available commands"),
             "commands" => println!(
-                "Available commands:\n\n{}\ncommands -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nforward/back -> select amount of seconds to go back or forward\nstatus -> get status of currently selected song",
+                "Available commands:\n\n{}\ncommands -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\ns/search -> search for and play a song\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nforward/back -> select amount of seconds to go back or forward\nstatus -> get status of currently selected song",
                 "Always available".bold().yellow(),
                 "If a device is active:".bold().green()
             ),
@@ -277,8 +277,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap();
 
                 let index = search_data.iter().position(|n| n.song_name == search_data_names[selection]).unwrap();
-
-                println!("{:?}", search_data[index])
+                match spotify
+                    .start_uris_playback(Some(PlayableId::from(search_data[index].id.clone())), Some(&active_device.id), None, None)
+                    .await
+                {
+                    Ok(_) => println!("Played: {}", search_data[index].song_name),
+                    Err(err) => printf_err("Could not resume playback", err),
+                }
             }
             "p" => {
                 if active_device.id == "" {
