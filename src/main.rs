@@ -247,9 +247,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         match input.trim() {
-            "help" => println!("Use 'commands' for a list of available commands"),
-            "commands" => println!(
-                "Available commands:\n\n{}\ncommands -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\ns/search -> search for and play a song\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nforward/back -> select amount of seconds to go back or forward\nstatus -> get status of currently selected song",
+            "help" => println!(
+                "Available commands:\n\n{}\nhelp -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\ns/search -> search for and play a song\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nforward/back -> select amount of seconds to go back or forward\nstatus -> get status of currently selected song",
                 "Always available".bold().yellow(),
                 "If a device is active:".bold().green()
             ),
@@ -265,23 +264,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let q = user_input();
                 let search_data = search(&spotify, q.trim()).await;
 
-                let search_data_names: Vec<&str> = search_data
+                let search_data_song_and_artists: Vec<String> = search_data
                     .iter()
-                    .map(|device| (device.song_name.as_str()))
+                    .map(|track| format!("{} - {}", track.song_name.as_str(), track.artists.join(", ")))
                     .collect();
 
                 let selection = Select::new()
-                    .with_prompt("Choose the device you want to activate")
-                    .items(&search_data_names[..])
+                    .with_prompt("Select song: ")
+                    .items(&search_data_song_and_artists[..])
                     .interact()
                     .unwrap();
+                
+                let selected_song = &search_data[selection];
 
-                let index = search_data.iter().position(|n| n.song_name == search_data_names[selection]).unwrap();
                 match spotify
-                    .start_uris_playback(Some(PlayableId::from(search_data[index].id.clone())), Some(&active_device.id), None, None)
+                    .start_uris_playback(Some(PlayableId::from(selected_song.id.clone())), Some(&active_device.id), None, None)
                     .await
                 {
-                    Ok(_) => println!("Played: {}", search_data[index].song_name),
+                    Ok(_) => println!("Started playing: {}", selected_song.song_name),
                     Err(err) => printf_err("Could not resume playback", err),
                 }
             }
