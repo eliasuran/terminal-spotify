@@ -3,9 +3,7 @@ use colored::Colorize;
 use dialoguer::Select;
 use dotenv::dotenv;
 use rspotify::{
-    model::{PlayableItem, SearchResult, SearchType, TrackId},
-    prelude::*,
-    scopes, AuthCodeSpotify, Credentials, OAuth,
+    model::{PlayableItem, PlaylistId, SearchResult, SearchType, TrackId}, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth
 };
 use std::io::Write;
 use terminal_spotify::{get_env, print_err, printf_err, user_input, you_can_not_leave};
@@ -13,6 +11,8 @@ use terminal_spotify::{get_env, print_err, printf_err, user_input, you_can_not_l
 // has to be &str can't call String::from outside fn ?
 const REDIRECT_URI: &str = "http://localhost:8888/callback";
 
+////// AUTH /////
+// TODO: IMPROVE AUTH (store refresh token in db or locally?)
 async fn authorize_user(
     client_id: &str,
     client_secret: &str,
@@ -21,9 +21,10 @@ async fn authorize_user(
     let oauth = OAuth {
         redirect_uri: REDIRECT_URI.to_string(),
         scopes: scopes!(
-            "user-read-playback-state",
-            "user-read-currently-playing",
-            "user-modify-playback-state"
+            "user-read-playback-state", // get status about player
+            "user-read-currently-playing", // get status about player
+            "user-modify-playback-state", // interact with player
+            "playlist-read-private" // to get playlists
         ),
         ..Default::default()
     };
@@ -36,8 +37,7 @@ async fn authorize_user(
     Ok(spotify)
 }
 
-// get all available devices
-// ex: get_currently_playing() is not allowed unless something is playing
+///// DEVICES /////
 #[derive(Debug)]
 struct Device {
     id: String,
@@ -53,6 +53,7 @@ impl Default for Device {
         }
     }
 }
+
 async fn get_available_devices(spotify: &AuthCodeSpotify) -> Vec<(String, String, bool)> {
     let devices = spotify.device().await.unwrap();
     devices
@@ -93,6 +94,39 @@ fn print_devices(devices: &Vec<(String, String, bool)>, active_device: &mut Devi
     }
 }
 
+async fn activate_device(
+    spotify: &AuthCodeSpotify,
+    devices: &Vec<(String, String, bool)>,
+    active_device: &mut Device,
+) {
+    let device_names: Vec<&str> = devices.iter().map(|device| (device.1.as_str())).collect();
+
+    let selection = Select::new()
+        .with_prompt("Choose the device you want to activate")
+        .items(&device_names[..])
+        .interact()
+        .unwrap();
+
+    for device in devices {
+        if device_names[selection] == device.1 {
+            *active_device = Device {
+                id: device.0.clone(),
+                name: device.1.clone(),
+                is_active: true,
+            }
+        }
+    }
+
+    match spotify
+        .transfer_playback(&active_device.id, Some(false))
+        .await
+    {
+        Ok(_) => println!("{} was activated", device_names[selection]),
+        Err(err) => printf_err("Could not activate the device", err),
+    }
+}
+
+///// CURRENTLY PLAYING /////
 #[derive(Debug)]
 struct CurrentlyPlaying {
     is_playing: bool,
@@ -126,9 +160,11 @@ async fn get_currently_playing(
     Ok(currently_playing_data)
 }
 
+
+///// SEARCHING / SELECTING /////
 #[derive(Debug)]
 struct SearchRes<'a> {
-    id: TrackId<'a>, // Use the lifetime parameter for TrackId
+    id: TrackId<'a>, 
     song_name: String,
     artists: Vec<String>,
 }
@@ -142,7 +178,6 @@ async fn search<'a>(spotify: &AuthCodeSpotify, query: &str) -> Vec<SearchRes<'a>
     let search_data: Vec<SearchRes<'_>> = res
         .iter()
         .flat_map(|result: &_| {
-            // Lifetime for closure argument
             match result {
                 SearchResult::Tracks(tracks) => tracks
                     .clone()
@@ -166,40 +201,38 @@ async fn search<'a>(spotify: &AuthCodeSpotify, query: &str) -> Vec<SearchRes<'a>
     search_data
 }
 
-// TODO: add function to activate device?
-async fn activate_device(
-    spotify: &AuthCodeSpotify,
-    devices: &Vec<(String, String, bool)>,
-    active_device: &mut Device,
-) {
-    let device_names: Vec<&str> = devices.iter().map(|device| (device.1.as_str())).collect();
+#[derive(Debug)]
+struct Playlist<'a> {
+    id: PlaylistId<'a>, 
+    name: String,
+}
+
+async fn select_playlist(spotify: &AuthCodeSpotify, active_device: &mut Device) {
+    let playlists = spotify.current_user_playlists_manual(Some(10), None).await;
+
+    let playlist_data: Vec<Playlist<'_>> = playlists.iter().flat_map(|res: &_| {
+        res.clone().items.into_iter().map(|playlist| Playlist {
+            id: playlist.id.clone(),
+            name: playlist.name,
+        }).collect::<Vec<Playlist<'_>>>()
+    }).collect();
+
+    let playlist_data_names: Vec<String> = playlist_data
+        .iter()
+        .map(|playlist| playlist.name.clone())
+        .collect();
 
     let selection = Select::new()
-        .with_prompt("Choose the device you want to activate")
-        .items(&device_names[..])
+        .with_prompt("Select song: ")
+        .items(&playlist_data_names[..])
         .interact()
         .unwrap();
 
-    for device in devices {
-        if device_names[selection] == device.1 {
-            *active_device = Device {
-                id: device.0.clone(),
-                name: device.1.clone(),
-                is_active: true,
-            }
-        }
-    }
-
-    match spotify
-        .transfer_playback(&active_device.id, Some(false))
-        .await
-    {
-        Ok(_) => println!("{} was activated", device_names[selection]),
-        Err(err) => printf_err("Could not activate the device", err),
+    match spotify.start_context_playback(PlayContextId::from(playlist_data[selection].id.clone()), Some(&active_device.id), None, None).await {
+        Ok(_) => println!("Started playing playlist: {}", playlist_data[selection].name),
+        Err(err) => printf_err("Could not start playing playlist", err)
     }
 }
-
-// TODO: add function to start / resume playback
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -285,6 +318,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(err) => printf_err("Could not resume playback", err),
                 }
             }
+            "playlist" | "playlists" => select_playlist(&spotify, &mut active_device).await,
             "p" => {
                 if active_device.id == "" {
                     print_err("Can't resume/pause playback because there is no active device");
@@ -337,7 +371,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(err) => printf_err("Could not pause playback", err),
                 }
             }
-            "restart" => {
+            "restart" | "r" => {
                 // use seek to position to set position to 0 ms
                 match spotify.seek_track(Duration::zero().into(), Some(&active_device.id)).await {
                     Ok(_) => println!("Restarted track"),

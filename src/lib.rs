@@ -34,6 +34,18 @@ pub fn user_input() -> String {
     }
 }
 
+pub fn print_success(text: &str) {
+    println!("{}", text.bold().bright_green())
+}
+
+pub fn printf_success<Message: Display>(text: &str, message: Message) {
+    println!(
+        "{}: {}",
+        text.bold().bright_red(),
+        message.to_string().bold().bright_red()
+    )
+}
+
 pub fn print_err(text: &str) {
     println!("{}", text.bold().bright_red())
 }
