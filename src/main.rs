@@ -3,7 +3,9 @@ use colored::Colorize;
 use dialoguer::Select;
 use dotenv::dotenv;
 use rspotify::{
-    model::{PlayableItem, PlaylistId, SearchResult, SearchType, TrackId}, prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth
+    model::{PlayableItem, PlaylistId, SearchResult, SearchType, TrackId},
+    prelude::*,
+    scopes, AuthCodeSpotify, Credentials, OAuth,
 };
 use std::io::Write;
 use terminal_spotify::{get_env, print_err, printf_err, user_input, you_can_not_leave};
@@ -21,10 +23,10 @@ async fn authorize_user(
     let oauth = OAuth {
         redirect_uri: REDIRECT_URI.to_string(),
         scopes: scopes!(
-            "user-read-playback-state", // get status about player
+            "user-read-playback-state",    // get status about player
             "user-read-currently-playing", // get status about player
-            "user-modify-playback-state", // interact with player
-            "playlist-read-private" // to get playlists
+            "user-modify-playback-state",  // interact with player
+            "playlist-read-private"        // to get playlists
         ),
         ..Default::default()
     };
@@ -160,16 +162,15 @@ async fn get_currently_playing(
     Ok(currently_playing_data)
 }
 
-
 ///// SEARCHING / SELECTING /////
 #[derive(Debug)]
 struct SearchRes<'a> {
-    id: TrackId<'a>, 
+    id: TrackId<'a>,
     song_name: String,
     artists: Vec<String>,
 }
 
-async fn search<'a>(spotify: &AuthCodeSpotify, query: &str) -> Vec<SearchRes<'a>> {
+async fn search_song<'a>(spotify: &AuthCodeSpotify, query: &str, active_device: &mut Device) {
     let res = spotify
         .search(query, SearchType::Track, None, None, Some(5), None)
         .await;
@@ -177,45 +178,82 @@ async fn search<'a>(spotify: &AuthCodeSpotify, query: &str) -> Vec<SearchRes<'a>
     // flat_map cause have to do 2 iterations
     let search_data: Vec<SearchRes<'_>> = res
         .iter()
-        .flat_map(|result: &_| {
-            match result {
-                SearchResult::Tracks(tracks) => tracks
-                    .clone()
-                    .items
-                    .into_iter()
-                    .map(|track| SearchRes {
-                        id: track.id.unwrap().clone(),
-                        song_name: track.name.clone(),
-                        artists: track
-                            .artists
-                            .iter()
-                            .map(|artist| artist.name.clone())
-                            .collect(),
-                    })
-                    .collect::<Vec<SearchRes<'_>>>(),
-                _ => vec![],
-            }
+        .flat_map(|result: &_| match result {
+            SearchResult::Tracks(tracks) => tracks
+                .clone()
+                .items
+                .into_iter()
+                .map(|track| SearchRes {
+                    id: track.id.unwrap().clone(),
+                    song_name: track.name.clone(),
+                    artists: track
+                        .artists
+                        .iter()
+                        .map(|artist| artist.name.clone())
+                        .collect(),
+                })
+                .collect::<Vec<SearchRes<'_>>>(),
+            _ => vec![],
         })
         .collect();
 
-    search_data
+    let search_data_song_and_artists: Vec<String> = search_data
+        .iter()
+        .map(|track| {
+            format!(
+                "{} - {}",
+                track.song_name.as_str(),
+                track.artists.join(", ")
+            )
+        })
+        .collect();
+
+    let selection = Select::new()
+        .with_prompt("Select song: ")
+        .items(&search_data_song_and_artists[..])
+        .interact()
+        .unwrap();
+
+    let selected_song = &search_data[selection];
+
+    match spotify
+        .start_uris_playback(
+            Some(PlayableId::from(selected_song.id.clone())),
+            Some(&active_device.id),
+            None,
+            None,
+        )
+        .await
+    {
+        Ok(_) => println!("Started playing: {}", selected_song.song_name),
+        Err(err) => printf_err("Could not resume playback", err),
+    }
 }
+
+async fn search_album(spotify: &AuthCodeSpotify) {}
 
 #[derive(Debug)]
 struct Playlist<'a> {
-    id: PlaylistId<'a>, 
+    id: PlaylistId<'a>,
     name: String,
 }
 
 async fn select_playlist(spotify: &AuthCodeSpotify, active_device: &mut Device) {
     let playlists = spotify.current_user_playlists_manual(Some(10), None).await;
 
-    let playlist_data: Vec<Playlist<'_>> = playlists.iter().flat_map(|res: &_| {
-        res.clone().items.into_iter().map(|playlist| Playlist {
-            id: playlist.id.clone(),
-            name: playlist.name,
-        }).collect::<Vec<Playlist<'_>>>()
-    }).collect();
+    let playlist_data: Vec<Playlist<'_>> = playlists
+        .iter()
+        .flat_map(|res: &_| {
+            res.clone()
+                .items
+                .into_iter()
+                .map(|playlist| Playlist {
+                    id: playlist.id.clone(),
+                    name: playlist.name,
+                })
+                .collect::<Vec<Playlist<'_>>>()
+        })
+        .collect();
 
     let playlist_data_names: Vec<String> = playlist_data
         .iter()
@@ -223,14 +261,25 @@ async fn select_playlist(spotify: &AuthCodeSpotify, active_device: &mut Device) 
         .collect();
 
     let selection = Select::new()
-        .with_prompt("Select song: ")
+        .with_prompt("Select song")
         .items(&playlist_data_names[..])
         .interact()
         .unwrap();
 
-    match spotify.start_context_playback(PlayContextId::from(playlist_data[selection].id.clone()), Some(&active_device.id), None, None).await {
-        Ok(_) => println!("Started playing playlist: {}", playlist_data[selection].name),
-        Err(err) => printf_err("Could not start playing playlist", err)
+    match spotify
+        .start_context_playback(
+            PlayContextId::from(playlist_data[selection].id.clone()),
+            Some(&active_device.id),
+            None,
+            None,
+        )
+        .await
+    {
+        Ok(_) => println!(
+            "Started playing playlist: {}",
+            playlist_data[selection].name
+        ),
+        Err(err) => printf_err("Could not start playing playlist", err),
     }
 }
 
@@ -295,30 +344,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::io::stdout().flush().unwrap();
 
                 let q = user_input();
-                let search_data = search(&spotify, q.trim()).await;
-
-                let search_data_song_and_artists: Vec<String> = search_data
-                    .iter()
-                    .map(|track| format!("{} - {}", track.song_name.as_str(), track.artists.join(", ")))
-                    .collect();
-
-                let selection = Select::new()
-                    .with_prompt("Select song: ")
-                    .items(&search_data_song_and_artists[..])
-                    .interact()
-                    .unwrap();
-                
-                let selected_song = &search_data[selection];
-
-                match spotify
-                    .start_uris_playback(Some(PlayableId::from(selected_song.id.clone())), Some(&active_device.id), None, None)
-                    .await
-                {
-                    Ok(_) => println!("Started playing: {}", selected_song.song_name),
-                    Err(err) => printf_err("Could not resume playback", err),
-                }
+                search_song(&spotify, q.trim(), &mut active_device).await;
             }
             "playlist" | "playlists" => select_playlist(&spotify, &mut active_device).await,
+            "album" => search_album(&spotify).await,
             "p" => {
                 if active_device.id == "" {
                     print_err("Can't resume/pause playback because there is no active device");
