@@ -3,7 +3,7 @@ use colored::Colorize;
 use dialoguer::Select;
 use dotenv::dotenv;
 use rspotify::{
-    model::{PlayableItem, PlaylistId, SearchResult, SearchType, TrackId},
+    model::{AlbumId, PlayableItem, PlaylistId, SearchResult, SearchType, TrackId},
     prelude::*,
     scopes, AuthCodeSpotify, Credentials, OAuth,
 };
@@ -226,11 +226,69 @@ async fn search_song<'a>(spotify: &AuthCodeSpotify, query: &str, active_device: 
         .await
     {
         Ok(_) => println!("Started playing: {}", selected_song.song_name),
-        Err(err) => printf_err("Could not resume playback", err),
+        Err(err) => printf_err("Could not start playing song", err),
     }
 }
 
-async fn search_album(spotify: &AuthCodeSpotify) {}
+#[derive(Debug)]
+struct Album<'a> {
+    id: AlbumId<'a>,
+    name: String,
+    artists: Vec<String>,
+}
+
+async fn search_album(spotify: &AuthCodeSpotify, query: &str, active_device: &mut Device) {
+    let res = spotify
+        .search(query, SearchType::Album, None, None, Some(5), None)
+        .await;
+
+    let search_data: Vec<Album<'_>> = res
+        .iter()
+        .flat_map(|result: &_| match result {
+            SearchResult::Albums(albums) => albums
+                .clone()
+                .items
+                .into_iter()
+                .map(|album| Album {
+                    id: album.id.unwrap().clone(),
+                    name: album.name.clone(),
+                    artists: album
+                        .artists
+                        .iter()
+                        .map(|artist| artist.name.clone())
+                        .collect(),
+                })
+                .collect::<Vec<Album<'_>>>(),
+            _ => vec![],
+        })
+        .collect();
+
+    let search_data_album_and_artists: Vec<String> = search_data
+        .iter()
+        .map(|album| format!("{} - {}", album.name.as_str(), album.artists.join(", ")))
+        .collect();
+
+    let selection = Select::new()
+        .with_prompt("Select song: ")
+        .items(&search_data_album_and_artists[..])
+        .interact()
+        .unwrap();
+
+    let selected_album = &search_data[selection];
+
+    match spotify
+        .start_context_playback(
+            PlayContextId::from(selected_album.id.clone()),
+            Some(&active_device.id),
+            None,
+            None,
+        )
+        .await
+    {
+        Ok(_) => println!("Started playing: {}", selected_album.name),
+        Err(err) => printf_err("Could not start playing album", err),
+    }
+}
 
 #[derive(Debug)]
 struct Playlist<'a> {
@@ -330,7 +388,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match input.trim() {
             "help" => println!(
-                "Available commands:\n\n{}\nhelp -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\ns/search -> search for and play a song\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nforward/back -> select amount of seconds to go back or forward\nstatus -> get status of currently selected song",
+                "Available commands:\n\n{}\nhelp -> get a list of available commands\nexit -> exit\nactivate -> select a device you want to activate\n\n{}\ns/song -> search for and play a song\nalbum -> search for and play an album\nplaylist -> search for and play a personal playlist\np -> resumes or pauses track, depending on which one is possible\nplay -> resume playback\npause -> pause playback\nrestart -> restarts track\nnext/prev -> skips to next or previous track\nforward/back -> select amount of seconds to go back or forward\nstatus -> get status of currently selected song",
                 "Always available".bold().yellow(),
                 "If a device is active:".bold().green()
             ),
@@ -339,15 +397,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let devices = get_available_devices(&spotify).await;
                 print_devices(&devices, &mut active_device)
             }
-            "search" | "s" => {
+            // search temp working here
+            "song" | "s" | "search" => {
                 print!("Search for a song: ");
                 std::io::stdout().flush().unwrap();
 
                 let q = user_input();
                 search_song(&spotify, q.trim(), &mut active_device).await;
             }
+            "album" | "a" => {
+                print!("Search for a song: ");
+                std::io::stdout().flush().unwrap();
+
+                let q = user_input();
+                search_album(&spotify, q.trim(), &mut active_device).await 
+            }
             "playlist" | "playlists" => select_playlist(&spotify, &mut active_device).await,
-            "album" => search_album(&spotify).await,
             "p" => {
                 if active_device.id == "" {
                     print_err("Can't resume/pause playback because there is no active device");
