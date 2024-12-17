@@ -1,4 +1,4 @@
-## work in progress
+## not a finished project
 
 ### features
 
